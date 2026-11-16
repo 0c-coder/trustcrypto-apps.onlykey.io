@@ -6,6 +6,8 @@ module.exports = function(additional_plugins) {
     we pull a app plugins from plugins.js and plugins-devel.js files trough main.js and main-production.js
 
   */
+  if (require("./frame-guard.js").refuseFramed(window)) return;
+
   var $ = require("jquery");
   window.jQuery = $;
   
