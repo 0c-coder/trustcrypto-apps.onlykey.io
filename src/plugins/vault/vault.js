@@ -286,6 +286,17 @@ module.exports = {
                 var ok = onlykey3rd(1, 0);
 
                 ok.on("status", function(msg) { log(msg); });
+                ok.on("challenge", function(code) {
+                    var box = document.getElementById("challenge_code_box");
+                    var out = document.getElementById("challenge_code");
+                    if (!box || !out) return;
+                    if (code && code.length) {
+                        out.textContent = code.join("  ");
+                        box.style.display = "block";
+                    } else {
+                        box.style.display = "none";
+                    }
+                });
                 ok.on("error", function(err) { log("OnlyKey error: " + err); });
 
                 function log(msg) {
@@ -325,7 +336,7 @@ module.exports = {
                     if (cached) return Promise.resolve(cached);
 
                     var phrase = "vault:" + serviceId;
-                    log("Touch your OnlyKey to authorize \"" + serviceId + "\"...");
+                    log("Confirm on your OnlyKey to unlock \"" + serviceId + "\"...");
 
                     // KEYTYPE.P256R1 = 1 - the only keytype for which
                     // derive_public_key()/derive_shared_secret() do a real
@@ -460,7 +471,7 @@ module.exports = {
                     var blob = new Blob([json], { type: "application/json" });
                     var a = document.createElement("a");
                     a.href = URL.createObjectURL(blob);
-                    a.download = "onlyagent-vault-export.json";
+                    a.download = "onlykey-vault-export.json";
                     a.click();
                     URL.revokeObjectURL(a.href);
                     log("Vault exported (ciphertext only — safe to store anywhere)");

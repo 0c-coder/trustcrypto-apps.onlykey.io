@@ -13,6 +13,3 @@ module.exports = [];
 module.exports.push(require("./plugins/console/console_debug.js"));
 
   
-
-/* vault: prerelease, development builds only */
-module.exports.push(require("./plugins/vault/vault.js"));

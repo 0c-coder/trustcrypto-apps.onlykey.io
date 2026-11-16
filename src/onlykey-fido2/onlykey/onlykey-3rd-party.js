@@ -419,6 +419,22 @@ module.exports = function(imports, onlykeyApi) {
             
         }
 
+        /** The three buttons the device asks for when it is in challenge-code
+         *  mode: sha256 over the 32-byte label hash and the peer public key, as
+         *  the device hashes them for a derived shared secret. */
+        async function emit_shared_secret_challenge(req) {
+            try {
+                var h = await digestArray(Uint8Array.from(req));
+                api.emit("challenge", [
+                    (h[0]  % 6) + 1,
+                    (h[15] % 6) + 1,
+                    (h[31] % 6) + 1
+                ]);
+            } catch (e) {
+                api.emit("challenge", []);
+            }
+        }
+
         api.derive_shared_secret = async function(additional_d, pubkey, keytype, press_required, cb) {
             try {
                 await ensure_connected();
@@ -472,6 +488,9 @@ module.exports = function(imports, onlykeyApi) {
             //msg("input pubkey -> " + pubkey)
             //msg("full message -> " + message)
 
+            var peerKeySize = (keytype == KEYTYPE.CURVE25519 || keytype == KEYTYPE.NACL) ? 32 : 65;
+            await emit_shared_secret_challenge([].concat(Array.from(dataHash), Array.from(pubkey).slice(0, peerKeySize)));
+
             var keyAction = KEYACTION.DERIVE_SHARED_SECRET; // press_required ignored; the device always prompts
 
             var enc_resp = 1;
@@ -480,6 +499,7 @@ module.exports = function(imports, onlykeyApi) {
                 if (!response.data) {
                     // msg("Problem setting time on onlykey");
                     api.emit("status", "OnlyKey: Problem Requesting Shared Secret");
+                    if (typeof cb === 'function') cb("Problem Requesting Shared Secret");
                     return;
                 }
                 response = response.data;
@@ -530,7 +550,12 @@ module.exports = function(imports, onlykeyApi) {
                     if (typeof cb === 'function') cb(null, _k, encode_key(sharedPub));
                 }
 
+            }).catch(function(e) {
+                var m = (e && e.message) ? e.message : String(e);
+                api.emit("status", "OnlyKey: " + m);
+                if (typeof cb === 'function') cb(m);
             });
+            api.emit("challenge", []);
         };
         
         // ---- Derived (label-based) X-Wing split custody ---------------------
