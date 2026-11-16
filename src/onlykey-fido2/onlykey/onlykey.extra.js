@@ -285,10 +285,14 @@ module.exports = function(imports) {
   // device mid-session, so any receiver-side counter would drift and then fail
   // every message after the drift.
   //
-  // v1 is kept because it is what older firmware speaks. transit_select() picks
-  // the scheme from the firmware version, which the host learns from the plain
-  // OKCONNECT response - that one is NOT encrypted (opt3 is 0 on that request),
-  // so it is readable before any of this applies.
+  // transit_select() picks the scheme from the firmware version, which the host
+  // learns from the plain OKCONNECT response - that one is NOT encrypted (opt3
+  // is 0 on that request), so it is readable before any of this applies.
+  //
+  // Only older firmware speaks v1, and this app does not serve it: firmware
+  // up to v3.0.4 is sent to apps.crp.to by version-route.js. So
+  // transit_seal()/transit_open() use v2 only; a version string that is old or
+  // does not parse ends the operation with a message.
   var counter = 0;   // v1 only. Deliberately never incremented; see above.
 
   // TRANSIT_V2_MIN and `transit` live at module scope - see the top of this
@@ -338,12 +342,17 @@ module.exports = function(imports) {
     return hex.match(/.{2}/g).map($exports.hexStrToDec);
   }
 
+  function refuseV1() {
+    return Promise.reject(new Error('transit: this OnlyKey speaks only the legacy v1 framing (firmware v3.0.4 or ' +
+      'earlier, served by https://apps.crp.to); update the firmware to use it here'));
+  }
+
   /**
    * Seal a host->device message. Returns [counter(4)][ciphertext][tag(16)].
-   * Falls back to v1 against older firmware.
+   * Refuses firmware that only speaks v1.
    */
   $exports.transit_seal = function transit_seal(plaintext, shared_sec) {
-    if (!transit.v2) return $exports.aesgcm_encrypt(plaintext, shared_sec);
+    if (!transit.v2) return refuseV1();
     return new Promise(resolve => {
       forge.options.usePureJavaScript = true;
       var ctr = transit.ctrOut++;
@@ -364,7 +373,7 @@ module.exports = function(imports) {
    * partial acceptance.
    */
   $exports.transit_open = function transit_open(frame, shared_sec) {
-    if (!transit.v2) return $exports.aesgcm_decrypt(frame, shared_sec);
+    if (!transit.v2) return refuseV1();
     return new Promise((resolve, reject) => {
       forge.options.usePureJavaScript = true;
       frame = Array.from(frame);

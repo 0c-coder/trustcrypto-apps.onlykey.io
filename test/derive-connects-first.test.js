@@ -17,11 +17,15 @@ function fakeApi(connectWorks) {
     init: false,
     browser: 'Chrome',
     os: 'Linux',
-    // A working connect leaves what onlykey-api.js's does: init set and a
-    // transit key in sharedsec.
+    // A working connect leaves what onlykey-api.js's does: init set, a
+    // transit key in sharedsec, and the framing selected from the version.
     connect: async () => {
       calls.push('connect');
-      if (connectWorks) { api.init = true; api.sharedsec = new Uint8Array(32).fill(7); }
+      if (connectWorks) {
+        api.init = true;
+        api.sharedsec = new Uint8Array(32).fill(7);
+        require(LIB + 'onlykey.extra.js')({ console: { info() {} }, forge: require(LIB + 'forge.min.js') }).transit_select('v3.0.5-prod');
+      }
     },
     ctaphid_via_webauthn: async () => { calls.push('ctaphid'); return { error: 'stub device' }; },
   };
