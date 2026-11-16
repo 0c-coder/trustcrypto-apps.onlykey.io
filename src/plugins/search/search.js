@@ -50,12 +50,16 @@ module.exports = {
 
                 var forge = app.forge;
                 var $ = app.$;
-                // A fetched key's user ID is attacker-controlled text; escape it
-                // before it is concatenated into the markup below.
+                // A fetched key's user ID and the Keybase profile fields are
+                // escaped before they go into the markup below, quotes
+                // included (several land in single-quoted attributes).
                 function esc(s) {
                     var d = document.createElement("div");
                     d.textContent = String(s == null ? "" : s);
-                    return d.innerHTML;
+                    return d.innerHTML.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+                }
+                function escUrl(s) {
+                    return esc(encodeURIComponent(String(s == null ? "" : s)));
                 }
 
                 // The fieldset used to get a random 'bright' rgba background on
@@ -169,6 +173,7 @@ module.exports = {
 
                                     var email = esc(theKey.pgp.userids[0].components.email);
                                     var username = esc(theKey.pgp.userids[0].components.username);
+                                    var usernameUrl = escUrl(theKey.pgp.userids[0].components.username);
                                     var keyid = "0x" + theKey.pgp.key_manager.get_pgp_key_id().toString("hex").toUpperCase();
                                     var keyid_short = theKey.pgp.key_manager.get_pgp_short_key_id();
                                     var fingerprint = theKey.pgp.get_fingerprint().toString("hex").toUpperCase();
@@ -184,7 +189,7 @@ module.exports = {
                                             sl.rightDiv.append("<p>KeyType " + b + "</p>");
                                     }
 
-                                    sl.rightDiv.append("Send Encrypted <a class='btn btn-success' target='_blank' href='./encrypt?type=e&recipients=" + username + "'>Message</a> <a class='btn btn-success' target='_blank' href='./encrypt-file?type=e&recipients=" + username + "'>File</a><br>");
+                                    sl.rightDiv.append("Send Encrypted <a class='btn btn-success' target='_blank' href='./encrypt?type=e&recipients=" + usernameUrl + "'>Message</a> <a class='btn btn-success' target='_blank' href='./encrypt-file?type=e&recipients=" + usernameUrl + "'>File</a><br>");
 
                                     var $getpgp_btn = $("<button class='btn btn-success'>Copy PGP Key</button>");
                                     var $pgp_copybox = $("<textarea>&nbsp;</textarea>");
@@ -210,7 +215,7 @@ module.exports = {
                                 break;
                         case (sites.q == 'keybase' || sites.q == 'all'):
                             //https://keybase.io/_/api/1.0/user/lookup.json?uid=4a4f61cdab6a13fb904599ef0159bd19
-                            var kburl = 'https://keybase.io/_/api/1.0/user/user_search.json?q=' + user.q;
+                            var kburl = 'https://keybase.io/_/api/1.0/user/user_search.json?q=' + encodeURIComponent(user.q);
                             $.ajax({
                                 url: kburl,
                                 async: true,
@@ -226,7 +231,7 @@ module.exports = {
 
                                             if (listItem.uid) {
                                                 $.ajax({
-                                                    url: 'https://keybase.io/_/api/1.0/user/lookup.json?uid=' + listItem.uid,
+                                                    url: 'https://keybase.io/_/api/1.0/user/lookup.json?uid=' + encodeURIComponent(listItem.uid),
                                                     async: true,
                                                     dataType: 'json',
                                                     success: async function(data) {
@@ -247,16 +252,18 @@ module.exports = {
                                                                     var fingerprint = theKey.pgp.get_fingerprint().toString("hex").toUpperCase();
                                                                     var keyType = theKey.pgp.primary.key.pub.type;
 
+                                                                    var kbUser = esc(listItem.username);
+                                                                    var kbUserUrl = escUrl(listItem.username);
                                                                     var sl = searchLayout();
-                                                                    if (listItem.picture_url != null)
-                                                                        sl.leftDiv.append("<img src='" + listItem.picture_url + "' width='10' height='auto'/><br>");
+                                                                    if (/^https:\/\//.test(listItem.picture_url || ""))
+                                                                        sl.leftDiv.append("<img src='" + esc(listItem.picture_url) + "' width='10' height='auto'/><br>");
                                                                     else sl.leftDiv.append("<img src='https://raw.githubusercontent.com/keybase/client/master/browser/images/icon-keybase-logo-128.png' />");
 
 
-                                                                    sl.rightDiv.append("<font color='red'>Keybase Username = <a color='text-danger' class='d-inline' target='_blank' href='https://keybase.io/" + listItem.username + "'>" + listItem.username + "</a></font>");
-                                                                    if (listItem.full_name) sl.rightDiv.append("<p>Full Name = " + listItem.full_name + "</p>");
+                                                                    sl.rightDiv.append("<font color='red'>Keybase Username = <a color='text-danger' class='d-inline' target='_blank' href='https://keybase.io/" + kbUserUrl + "'>" + kbUser + "</a></font>");
+                                                                    if (listItem.full_name) sl.rightDiv.append("<p>Full Name = " + esc(listItem.full_name) + "</p>");
                                                                     sl.rightDiv.append("<p>"+email+"</p>");
-                                                                    sl.rightDiv.append("View Keybase Profile <a href='https://keybase.io/" + listItem.username + "'>Here</a>");
+                                                                    sl.rightDiv.append("View Keybase Profile <a href='https://keybase.io/" + kbUserUrl + "'>Here</a>");
                                                                     sl.rightDiv.append("<p>GPG KeyID: " + keyid + " (" + keyid_short + ")" + "<br/>Fingerprint: " + fingerprint + "</p>");
                                                                     
                                                                     for (var b in app.kbpgp.const.openpgp.public_key_algorithms) {
@@ -265,27 +272,29 @@ module.exports = {
                                                                     }
                                                                     
                                                                     for (var i in element.services_summary) {
-                                                                        var srv = element.services_summary[i].service_name.toUpperCase();
+                                                                        var srv = esc(String(element.services_summary[i].service_name).toUpperCase());
+                                                                        var svcUser = esc(element.services_summary[i].username);
+                                                                        var svcUserUrl = escUrl(element.services_summary[i].username);
                                                                         switch (srv) {
                                                                             case 'GITHUB':
-                                                                                sl.rightDiv.append("<a target='_blank' class='color-blue' href='https://github.com/" + element.services_summary[i].username + "'>" +
-                                                                                    srv + " Username = " + element.services_summary[i].username + "</a><br>");
+                                                                                sl.rightDiv.append("<a target='_blank' class='color-blue' href='https://github.com/" + svcUserUrl + "'>" +
+                                                                                    srv + " Username = " + svcUser + "</a><br>");
                                                                                 break;
                                                                             case 'REDDIT':
-                                                                                sl.rightDiv.append("<a target='_blank' class='color-blue' href='https://www.reddit.com/user/" + element.services_summary[i].username + "'>" +
-                                                                                    srv + " Username = " + element.services_summary[i].username + "</a><br>");
+                                                                                sl.rightDiv.append("<a target='_blank' class='color-blue' href='https://www.reddit.com/user/" + svcUserUrl + "'>" +
+                                                                                    srv + " Username = " + svcUser + "</a><br>");
                                                                                 break;
                                                                             case 'TWITTER':
-                                                                                sl.rightDiv.append("<a target='_blank' class='color-blue' href='https://twitter.com/" + element.services_summary[i].username + "'>" +
-                                                                                    srv + " Username = " + element.services_summary[i].username + "</a><br>");
+                                                                                sl.rightDiv.append("<a target='_blank' class='color-blue' href='https://twitter.com/" + svcUserUrl + "'>" +
+                                                                                    srv + " Username = " + svcUser + "</a><br>");
                                                                                 break;
 
                                                                             default:
-                                                                                sl.rightDiv.append("<font color='blue'>" + element.services_summary[i].service_name.toUpperCase() + " Username = " + element.services_summary[i].username + "</font><br>");
+                                                                                sl.rightDiv.append("<font color='blue'>" + srv + " Username = " + svcUser + "</font><br>");
                                                                         }
                                                                     }
 
-                                                                    sl.rightDiv.append("Send Encrypted <a class='btn btn-success' target='_blank' href='./encrypt?type=e&recipients=" + listItem.username + "'>Message</a> <a class='btn btn-success' target='_blank' href='./encrypt-file?type=e&recipients=" + listItem.username + "'>File</a><br>");
+                                                                    sl.rightDiv.append("Send Encrypted <a class='btn btn-success' target='_blank' href='./encrypt?type=e&recipients=" + kbUserUrl + "'>Message</a> <a class='btn btn-success' target='_blank' href='./encrypt-file?type=e&recipients=" + kbUserUrl + "'>File</a><br>");
 
                                                                     var $getpgp_btn = $("<button  class='btn btn-success'>Copy PGP Key</button>");
                                                                     var $pgp_copybox = $("<textarea>&nbsp;</textarea>");
