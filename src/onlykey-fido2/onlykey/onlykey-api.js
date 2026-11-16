@@ -168,7 +168,7 @@ module.exports = function(imports) {
           // say where such a key is served. Never an automatic redirect: no
           // key at all looks the same. See version-route.js.
           var hint = versionRoute.noAnswerHint(window.location);
-          var hintHtml = hint ? " <a href='" + hint.url + "'>" + hint.text + "</a>" : "";
+          var hintHtml = hint ? " <a href='" + escHtml(hint.url) + "'>" + escHtml(hint.text) + "</a>" : "";
           if (onlykey_api.browser == 'Firefox') headermsg("<p class='text-danger'>OnlyKey not connected! Close this tab and open a new one to try again." + hintHtml + "</p>");
           else headermsg("<p class='text-danger'>OnlyKey not connected! Refresh this page to try again." + hintHtml + "</p>");
           imports.app.emit("ok-disconnected");
@@ -179,6 +179,13 @@ module.exports = function(imports) {
               break;
             case "CTAP1_SUCCESS":
               var BREAKING_BETA_8C = !!(bytes2string(response.slice(8, 20)) == "v0.2-beta.8c");
+              // The reply must hold the key and version read below; a shorter
+              // one is refused with a message.
+              if (response.length < (BREAKING_BETA_8C ? 53 : 52)) {
+                headermsg("<p class='text-danger'>OnlyKey sent a malformed handshake reply. Refresh this page to try again.</p>");
+                imports.app.emit("ok-disconnected");
+                return cb("malformed handshake reply (" + response.length + " bytes)");
+              }
               
               if(!BREAKING_BETA_8C){
                 okPub = response.slice(0, 32);
@@ -197,7 +204,7 @@ module.exports = function(imports) {
                 var route = versionRoute.afterHandshake(window.location, onlykey_api.FWversion);
                 if (route.action === 'redirect') {
                   console.info("Version route:", route.reason, "->", route.url);
-                  headermsg("<p class='text-info'>" + route.reason + ". Taking you there...</p>");
+                  headermsg("<p class='text-info'>" + escHtml(route.reason) + ". Taking you there...</p>");
                   imports.app.emit("ok-disconnected");
                   onlykey_api.redirecting = true;
                   window.location.replace(route.url);
@@ -236,7 +243,7 @@ module.exports = function(imports) {
                 imports.app.emit("ok-connected");
                 cb(null);
               }
-              headermsg("<p class='text-success'>OnlyKey " + onlykey_api.FWversion + " Secure Connection Established</p>\n");
+              headermsg("<p class='text-success'>OnlyKey " + escHtml(onlykey_api.FWversion) + " Secure Connection Established</p>\n");
               break;
             default:
               imports.app.emit("ok-disconnected");
@@ -560,6 +567,12 @@ module.exports = function(imports) {
   
   function id(s) { return document.getElementById(s); }
   
+  function escHtml(s) {
+    return String(s).replace(/[&<>"']/g, function(c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
   function headermsg(s) { 
     //if(imports.app)
     //  imports.app.emit("ok-message",s);
