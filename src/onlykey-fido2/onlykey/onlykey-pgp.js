@@ -663,7 +663,11 @@ module.exports = function(imports) {
               var ds = null;
               ds = decryptedMessage[0].get_data_signer();
               if (ds == null) {
-                _api.emit("status", "Done :) Message has no signature, Click here to copy message");
+                var unsigned = new Error("The message is not signed, so it cannot be verified. Use Decrypt Only to read it anyway.");
+                _api.emit("error", unsigned);
+                callback(unsigned);
+                resolve();
+                return;
               }
               else {
                 console.log(ds);
@@ -765,7 +769,11 @@ module.exports = function(imports) {
               var ds = null;
               ds = ct[0].get_data_signer();
               if (ds == null) {
-                _api.emit("status", 'Done :) file has no signature, downloading decrypted file ' + filename);
+                var unsignedFile = new Error("The file is not signed, so it cannot be verified. Use Decrypt Only to read it anyway.");
+                _api.emit("error", unsignedFile);
+                callback(unsignedFile);
+                resolve();
+                return;
               }
               else {
                 console.log(ds);
