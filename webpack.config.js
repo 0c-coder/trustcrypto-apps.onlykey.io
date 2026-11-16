@@ -13,6 +13,7 @@ var cspOptions = {
         'default-src': "'self'",
         'base-uri': "'none'",
         'object-src': "'none'",
+        'form-action': "'self'",
         'script-src': [
             // "'unsafe-inline'",
             "'self'", 
