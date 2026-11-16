@@ -356,9 +356,9 @@ module.exports = function(imports) {
 
             var mypubkeyids = sender.get_all_pgp_key_ids();
 
-            for (var i in mypubkeyids) {
+            for (var i = 0; i < mypubkeyids.length; i++) {
               var target = Array.from(mypubkeyids[i]).join("-");
-              for (var j in ct_array) {
+              for (var j = 0; j < ct_array.length; j++) {
                 var check = Array.from(ct_array[j].key_id).join("-");
                 if (target == check) {
                   return complete(ct_array[j]);
@@ -815,7 +815,7 @@ module.exports = function(imports) {
           });
 
           keys = [];
-          for (var i in r_inputs) {
+          for (var i = 0; i < r_inputs.length; i++) {
             var jquery_data_input = false; //$(urlinputbox).data("data-" + r_inputs[i]);
             if (jquery_data_input) {
               keys.push(jquery_data_input);
@@ -851,7 +851,7 @@ module.exports = function(imports) {
           switch (_$mode()) {
             case 'Encrypt and Sign':
               if (key1 instanceof Array) {
-                for (var i in key1) {
+                for (var i = 0; i < key1.length; i++) {
                   keyList.push(await keyStore.loadPublic(key1[i]));
                 }
               }
@@ -869,7 +869,7 @@ module.exports = function(imports) {
               break;
             case 'Encrypt Only':
               if (key1 instanceof Array) {
-                for (var i in key1) {
+                for (var i = 0; i < key1.length; i++) {
                   keyList.push(await keyStore.loadPublic(key1[i]));
                 }
               }
@@ -970,7 +970,7 @@ module.exports = function(imports) {
               switch (_$mode()) {
                 case 'Encrypt and Sign':
                   if (key1 instanceof Array) {
-                    for (var i in key1) {
+                    for (var i = 0; i < key1.length; i++) {
                       keyList.push(await keyStore.loadPublic(key1[i]));
                     }
                   }
@@ -988,7 +988,7 @@ module.exports = function(imports) {
                   break;
                 case 'Encrypt Only':
                   if (key1 instanceof Array) {
-                    for (var i in key1) {
+                    for (var i = 0; i < key1.length; i++) {
                       keyList.push(await keyStore.loadPublic(key1[i]));
                     }
                   }

@@ -132,7 +132,7 @@ module.exports = {
                         app.pages.state.replace({ pathname: pathname }, $("title").text(), "./search?q=" + escape(user.q));
                         console.log(decodedkey);
 
-                        for (var i in decodedkey) {
+                        for (var i of Object.keys(decodedkey)) {
                             if (decodedkey[i]) {
                                 console.log(decodedkey[i]);
 
@@ -271,7 +271,7 @@ module.exports = {
                                                                             sl.rightDiv.append("<p>KeyType " + b + "</p>");
                                                                     }
                                                                     
-                                                                    for (var i in element.services_summary) {
+                                                                    for (var i of Object.keys(element.services_summary || {})) {
                                                                         var srv = esc(String(element.services_summary[i].service_name).toUpperCase());
                                                                         var svcUser = esc(element.services_summary[i].username);
                                                                         var svcUserUrl = escUrl(element.services_summary[i].username);
