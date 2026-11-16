@@ -16,6 +16,7 @@
       <a href="<%= htmlWebpackPlugin.options.dir_name %>/encrypt"><i class="fa fa-lock"></i><span>Encrypt</span></a>
       <a href="<%= htmlWebpackPlugin.options.dir_name %>/decrypt"><i class="fa fa-unlock"></i><span>Decrypt</span></a>
       <a href="<%= htmlWebpackPlugin.options.dir_name %>/search"><i class="fa fa-search"></i><span>Search</span></a>
+      <a href="<%= htmlWebpackPlugin.options.dir_name %>/vault"><i class="fa fa-shield"></i><span>Vault</span></a>
       <span class="sep"></span>
       <a href="https://docs.crp.to"><i class="fa fa-book"></i><span>Docs</span></a>
       <a href="https://onlykey.io"><i class="fa fa-shopping-cart"></i><span>Get OnlyKey</span></a>
@@ -31,7 +32,7 @@
       </div>
     </section>
 
-    <!-- Three cards, matching the app's header: Encrypt, Decrypt, Search.
+    <!-- Four cards, matching the app's header: Encrypt, Decrypt, Search, Vault.
          This used to list five, one per page, back when a file and a message
          were separate destinations. They are methods inside a task now - the
          selector on each page picks Message, File, PQC-PGP or AGE - so the
@@ -41,6 +42,7 @@
       <a class="oa-tool" href="<%= htmlWebpackPlugin.options.dir_name %>/encrypt"><div class="ic"><i class="fa fa-lock"></i></div><h3>Encrypt &amp; Sign</h3><p>Messages or files, for any Keybase or Protonmail user — with classic PGP, composite PGP-PQC, or derived age encryption.</p></a>
       <a class="oa-tool" href="<%= htmlWebpackPlugin.options.dir_name %>/decrypt"><div class="ic"><i class="fa fa-unlock"></i></div><h3>Decrypt &amp; Verify</h3><p>Open incoming messages and files, and confirm they came from who you expect. Your private keys never leave your OnlyKey.</p></a>
       <a class="oa-tool" href="<%= htmlWebpackPlugin.options.dir_name %>/search"><div class="ic"><i class="fa fa-search"></i></div><h3>Find a Recipient</h3><p>Search Keybase and Protonmail for someone to send encrypted messages to.</p></a>
+      <a class="oa-tool" href="<%= htmlWebpackPlugin.options.dir_name %>/vault"><div class="ic"><i class="fa fa-shield"></i></div><h3>Vault</h3><p>Keep API keys and secrets encrypted by your OnlyKey. Only ciphertext is stored, in this browser.</p></a>
     </section>
 
   </main>

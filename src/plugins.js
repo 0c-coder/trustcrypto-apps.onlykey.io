@@ -56,6 +56,8 @@ module.exports.push(require("./plugins/age-derive/age-derive.js"));
 
 module.exports.push(require("./plugins/pgp-pqc/pgp-pqc.js"));
 
+module.exports.push(require("./plugins/vault/vault.js"));
+
 if (!!(process.env.NODE_ENV === "production")) {//is production
   
   //production only plugins (we should have sister plugins enabled in plugins-devel.js)
