@@ -1,3 +1,5 @@
+var keyIdentity = require('./key-identity.js');
+
 module.exports = function(imports) {
   var console = imports.console;
   return function(onlykeyApi, usevirtru) {
@@ -668,12 +670,7 @@ module.exports = function(imports) {
                 if (ds) { recipient_public_key = ds.get_key_manager(); }
                 if (recipient_public_key) {
                   console.log("Signed by PGP Key");
-                  var keyid = recipient_public_key.get_pgp_fingerprint().toString('hex').toUpperCase();
-                  keyid = keyid.slice(24, 40);
-                  var userid = recipient_public_key.userids[0].components.email.split("@")[0];
-                  console.log(keyid);
-                  console.log(userid);
-                  _api.emit("status", "Done :) Signed by " + userid + " (Key ID: " + keyid + "), Click here to copy message");
+                  _api.emit("status", "Done :) Signed by " + keyIdentity.describe(recipient_public_key) + ", Click here to copy message");
                 }
               }
             }
@@ -776,12 +773,7 @@ module.exports = function(imports) {
                 if (ds) { recipient_public_key = ds.get_key_manager(); }
                 if (recipient_public_key) {
                   console.log("Signed by PGP Key");
-                  var keyid = recipient_public_key.get_pgp_fingerprint().toString('hex').toUpperCase();
-                  keyid = keyid.slice(24, 40);
-                  var userid = recipient_public_key.userids[0].components.email.split("@")[0];
-                  console.log(keyid);
-                  console.log(userid);
-                  _api.emit("status", 'Done :) Signed by ' + userid + ' (Key ID: ' + keyid + '), downloading decrypted file ' + filename);
+                  _api.emit("status", 'Done :) Signed by ' + keyIdentity.describe(recipient_public_key) + ', downloading decrypted file ' + filename);
                 }
               }
             }
@@ -912,7 +904,8 @@ module.exports = function(imports) {
               _api.emit("status", 'Done :)  Click here to copy message, then paste signed message into an email, IM, whatever.');
             }
             else {
-              _api.emit("status", 'Done :)  Click here to copy message, then paste encrypted message into an email, IM, whatever.');
+              _api.emit("status", 'Done :)  Encrypted for ' + keyList.map(keyIdentity.describe).join(', ') +
+                '. Click here to copy message, then paste encrypted message into an email, IM, whatever.');
             }
             _api.emit("done");
             callback(null, results);
@@ -1031,7 +1024,8 @@ module.exports = function(imports) {
                 if ((document.getElementById('onlykey_start').value) == 'Sign Only')
                   _api.emit("status", 'Done :)  downloading signed file ' + filename + '.zip.gpg');
                 else
-                  _api.emit("status", 'Done :)  downloading encrypted file ' + filename + '.zip.gpg');
+                  _api.emit("status", 'Done :)  Encrypted for ' + keyList.map(keyIdentity.describe).join(', ') +
+                    ', downloading encrypted file ' + filename + '.zip.gpg');
                 if (usevirtru != null) {
                   try {
                     _api.emit("status", 'Done :)  downloading encrypted file ' + filename + '.tdf');
