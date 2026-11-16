@@ -304,8 +304,8 @@ module.exports = {
                                 async function(cancel, ans) {
                                     if (ans == "Yes") {
                                         var pair = await app.SEA.pair();
+                                        // The link carries the whole secret.
                                         var secret = gm_encode(await app.SEA.secret(pair, pair));
-                                        secret = secret.substring(0, 16);
                                         var $data = await app.SEA.encrypt(data, secret);
 
                                         var hash = await app.SEA.work($data, null, null, { name: "SHA-256" });

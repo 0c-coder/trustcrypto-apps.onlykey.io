@@ -19,6 +19,11 @@ module.exports = {
         const onlykey3rd = require('./onlykey/onlykey-3rd-party.js')(imports, onlykeyApi);
 
         const request = require('superagent');
+        // Values from a link arrive still percent-encoded; encode them exactly once.
+        function pathPart(s) {
+            try { s = decodeURIComponent(s); } catch (e) {}
+            return encodeURIComponent(s);
+        }
         var getKey = function getKey(url, statusFn_force) {
             var statusFn, force;
             if (typeof statusFn_force == "string")
@@ -73,7 +78,7 @@ module.exports = {
             function protonmail() {
                 return new Promise(resolve => {
                     if (statusFn) statusFn('Downloading public key (protonmail) ...');
-                    url = 'https://onlykey.herokuapp.com/protonmail/get/' + url;
+                    url = 'https://onlykey.herokuapp.com/protonmail/get/' + pathPart(url);
                     request
                         .get(url)
                         .set("Content-Type", "text/plain")
@@ -94,7 +99,7 @@ module.exports = {
                 return new Promise(resolve => {
                     //button.textContent = 'Downloading public key ...';
                     if (statusFn) statusFn('Downloading public key (keybase) ...');
-                    url = 'https://keybase.io/'.concat(url, '/pgp_keys.asc');
+                    url = 'https://keybase.io/'.concat(pathPart(url), '/pgp_keys.asc');
                     request
                         .get(url)
                         .end((err, key) => {
