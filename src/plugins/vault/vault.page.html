@@ -3,7 +3,7 @@
         <a href="https://onlykey.io" target="_blank">OnlyKey</a></font>
 </h4>
 <p class="text-muted">Store API keys and secrets encrypted by your OnlyKey. Encryption keys are
-    derived on the device — first use requires a physical touch, and plaintext never touches disk.</p>
+    derived on the device. Each unlock is confirmed on the OnlyKey, and only ciphertext is stored, in this browser.</p>
 
 <fieldset>
     <input type="text" id="vault_service" placeholder="Service name (e.g. openai, github, stripe)" autocomplete="off" />
@@ -18,6 +18,11 @@
     <textarea readonly id="vault_add_result" class="startHidden" rows="3"
         placeholder="Encrypted blob appears here — safe to copy, commit, share"></textarea>
 </fieldset>
+
+<div id="challenge_code_box" class="oa-challenge">
+    <div class="oa-challenge-hint">Look at your OnlyKey - <b>tap any button</b> to confirm. If it instead shows a challenge, press these in order:</div>
+    <div id="challenge_code" class="oa-challenge-code"></div>
+</div>
 
 <h3>Stored credentials</h3>
 <div id="vault_list"></div>
