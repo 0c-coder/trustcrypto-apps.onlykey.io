@@ -93,6 +93,9 @@ app.use(express.static(dirname));
 app.get('/protonmail/:action/:address_id*', (req, res, next) => {
   var address_id = req.params.address_id;
   var action = req.params.action;
+  // An address or a key ID, encoded for the upstream query.
+  if (!/^(0x[0-9a-fA-F]{8,40}|[^\s@&?#/]+@[^\s@&?#/]+)$/.test(address_id)) return res.status(400).send('Bad request');
+  address_id = encodeURIComponent(address_id);
 
   var url;
   switch (action) {
