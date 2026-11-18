@@ -122,6 +122,28 @@ module.exports = function(imports) {
         return p;
       }
 
+      // ok_extension.cpp MAX_LARGE_RESP_CHUNK: how much of a staged response one
+      // OKPING returns. Matches onlykey-3rd-party.js.
+      var MAX_LARGE_RESP_CHUNK = 512;
+      // RSA-4096 needs 2 polls; the cap only bounds a misbehaving device.
+      var MAX_RESPONSE_POLLS = 8;
+
+      async function collect_response_tail(first) {
+        var full = Array.from(first);
+        var last = full.length;
+        for (var n = 1; last === MAX_LARGE_RESP_CHUNK; n++) {
+          if (n >= MAX_RESPONSE_POLLS) throw new Error("OnlyKey response did not end after " + n + " polls");
+          var ping = await transit_seal(Array.from(new Uint8Array(64)), onlykeyApi.sharedsec);
+          var next = await onlykeyApi.ctaphid_via_webauthn(OKPING, 2, null, null, ping, 6000);
+          if (!next || next.error) throw new Error((next && next.error) || "No response from OnlyKey while reading the rest of its reply");
+          var part = next.data ? Array.from(next.data) : [];
+          if (!part.length) throw new Error("OnlyKey reply ended early (" + full.length + " bytes)");
+          Array.prototype.push.apply(full, part);
+          last = part.length;
+        }
+        return full;
+      }
+
       function msg_polling(params = {}, callback) {
         return new Promise(async function(resolve, reject) {
 
@@ -194,6 +216,20 @@ module.exports = function(imports) {
                 // The session key is NOT logged. It was, on this line, until
                 // this change: a console line carrying onlykeyApi.sharedsec
                 // hands the whole session to anything that can read the console.
+                // The device serves a staged response MAX_LARGE_RESP_CHUNK
+                // (512) bytes per poll (ok_extension.cpp send_stored_response).
+                // Transit v2 adds 20 bytes of framing, so an RSA-4096 signature
+                // (512 B) is staged as 532 and needs a second poll for its last
+                // 20 bytes. Opening only the first 512 failed the tag check
+                // ("transit: message failed authentication") on every RSA-4096
+                // sign. Keep polling while a poll comes back full; the first
+                // shorter one is the tail. Each poll is sealed afresh: the
+                // device ignores a repeated sealed packet.
+                try {
+                  response = await collect_response_tail(response);
+                } catch (e) {
+                  return cb(e.message || String(e), null);
+                }
                 try {
                   data = await transit_open(response, onlykeyApi.sharedsec);
                 } catch (e) {

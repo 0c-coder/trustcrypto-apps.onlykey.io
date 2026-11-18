@@ -151,7 +151,10 @@ module.exports = function(imports) {
   $exports.getstringlen = function getstringlen(bytes) {
     for (var i = 1; i <= bytes.length; i++) {
       // console.info("getstringlen ", i);
-      if ((bytes[i] > 122 || bytes[i] < 97) && bytes[i] != 32) return i;
+      // Device messages are printable ASCII ("Error stored key use over FIDO2
+      // not enabled"). Stopping at anything outside a-z cut them at the first
+      // capital or digit, so explainDeviceError() never matched.
+      if (!(bytes[i] >= 32 && bytes[i] <= 126)) return i;
     }
   };
 
