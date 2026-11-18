@@ -41,4 +41,13 @@ function describe(km) {
   return userid(km) + ' [' + fingerprint(km) + ']';
 }
 
-module.exports = { describe: describe, fingerprint: fingerprint, userid: userid };
+/** The same line for an openpgp.js key (the openpgp.js decrypt route). */
+function describeOpenpgp(key) {
+  var ids = [];
+  try { ids = key.getUserIDs(); } catch (e) { ids = []; }
+  var uid = ids.length ? clean(ids[0]) + (ids.length > 1 ? ' (+' + (ids.length - 1) + ' more)' : '') : '(no user ID)';
+  var fp = String(key.getFingerprint()).toUpperCase().match(/.{4}/g).join(' ');
+  return uid + ' [' + fp + ']';
+}
+
+module.exports = { describe: describe, describeOpenpgp: describeOpenpgp, fingerprint: fingerprint, userid: userid };

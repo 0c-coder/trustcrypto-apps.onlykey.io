@@ -1291,6 +1291,20 @@ module.exports = function(imports, onlykeyApi) {
                 sent++;
                 api.emit("status", "OnlyKey: Sending data to device (packet " + sent + " of " + total + ")");
             }
+            // The device now waits for its confirmation, and nothing on the page
+            // said so: the last line shown was "Sending data to device (packet n
+            // of n)", so a user waited for the page while the key waited for them
+            // until it timed out. The digits are what the device asks for in
+            // challenge-code mode: SHA-256 over the reassembled payload, bytes
+            // 0/15/31, mod 6, plus 1 (okcore_prime_user_confirmation).
+            try {
+                var h = await digestArray(Uint8Array.from(payload));
+                api.emit("status", "Confirm on your OnlyKey - tap any button, or press " +
+                    [(h[0] % 6) + 1, (h[15] % 6) + 1, (h[31] % 6) + 1].join('-') +
+                    " if it asks for a challenge code.");
+            } catch (e) {
+                api.emit("status", "Confirm on your OnlyKey - tap any button.");
+            }
             return last;
         }
 
