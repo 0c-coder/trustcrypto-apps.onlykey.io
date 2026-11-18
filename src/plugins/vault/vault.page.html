@@ -4,13 +4,34 @@
         <a href="https://onlykey.io" target="_blank">OnlyKey</a></font>
 </h4>
 <p class="text-muted">Store API keys and secrets encrypted by your OnlyKey. Encryption keys are
-    derived on the device. Each unlock is confirmed on the OnlyKey, and only ciphertext is stored, in this browser.</p>
+    derived on the device, and only ciphertext is stored, in this browser.</p>
+<details class="vault-crypto">
+    <summary>How your secrets are encrypted</summary>
+    <ul>
+        <li><b>Algorithm:</b> ML-KEM-768 + X25519 (X-Wing), a post-quantum hybrid key encapsulation, with
+            AES-256-GCM for the secret itself.</li>
+        <li><b>On the OnlyKey:</b> for each service name the device derives an X-Wing key pair from its
+            web-derivation key, a random 32-byte key generated on the OnlyKey, and
+            SHA-256(&quot;vault:&quot; + service name). The private key never leaves the OnlyKey.</li>
+        <li><b>Store:</b> this page gets the service's public key from the OnlyKey (no tap needed) and
+            encapsulates a fresh shared secret to it. HKDF-SHA256 turns that secret into a non-exportable
+            AES-256-GCM key (WebCrypto), which encrypts the secret with a random 96-bit nonce and the service
+            name as associated data. Only the 1120-byte KEM ciphertext and the AES-GCM ciphertext are stored
+            (IndexedDB).</li>
+        <li><b>Unlock:</b> the KEM ciphertext goes to the OnlyKey, which decapsulates it (both the ML-KEM and the
+            X25519 halves) and returns the shared secret over the encrypted OnlyKey connection. Every unlock
+            needs a tap, or the challenge code shown below if your OnlyKey is set to challenge mode. Unlocked keys
+            stay in memory for the session time you choose, until Lock all sessions or the page closes.</li>
+        <li><b>Recovery:</b> the same OnlyKey and service name always give the same key pair, so an exported
+            vault opens on any computer with that OnlyKey, or with a key restored from its backup.</li>
+    </ul>
+</details>
 
 <fieldset>
     <input type="text" id="vault_service" placeholder="Service name (e.g. openai, github, stripe)" autocomplete="off" />
     <input type="password" id="vault_secret" placeholder="Secret / API key to encrypt" autocomplete="off" />
     <select id="vault_policy">
-        <option value="always">Touch required every use</option>
+        <option value="always">Unlock with OnlyKey every use</option>
         <option value="session:30m" selected>Session: 30 minutes</option>
         <option value="session:8h">Session: 8 hours</option>
         <option value="startup">Session: until page closes</option>

@@ -1,59 +1,19 @@
 /**
- * OnlyAgent Vault — hardware-encrypted credential manager.
+ * OnlyKey Vault - hardware-encrypted credential manager.
  *
- * Ported from onlykey-proxy PWA (js/vault.js, js/crypto.js, js/session-cache.js).
- * Secrets are AES-256-GCM encrypted with a NON-EXTRACTABLE key derived from an
- * OnlyKey ECDH shared secret (physical touch required). IndexedDB stores only
- * ciphertext. Session cache holds CryptoKey objects in memory with TTL policies.
+ * Secrets are encrypted with ML-KEM-768 + X25519 (X-Wing) keys derived on the
+ * OnlyKey per service; see vault-crypto.js for the scheme. IndexedDB stores
+ * only ciphertext. Session cache holds non-extractable CryptoKey objects in
+ * memory with TTL policies.
  */
+
+var vaultCrypto = require("./vault-crypto.js");
 
 var pagesList = {
     "vault": {
         sort: 36,
         icon: "fa-shield",
         title: "Vault"
-    }
-};
-
-// ── WebCrypto (HKDF → AES-256-GCM, non-extractable) ────────────────────
-
-var OKCrypto = {
-    HKDF_INFO: new TextEncoder().encode("onlyagent-vault-v1"),
-
-    deriveAesKey: async function(sharedSecret) {
-        var ikm = await crypto.subtle.importKey(
-            "raw", sharedSecret, { name: "HKDF" }, false, ["deriveKey"]
-        );
-        return crypto.subtle.deriveKey(
-            { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(32), info: this.HKDF_INFO },
-            ikm,
-            { name: "AES-GCM", length: 256 },
-            false, // NON-EXTRACTABLE
-            ["encrypt", "decrypt"]
-        );
-    },
-
-    encrypt: async function(aesKey, plaintext) {
-        var nonce = crypto.getRandomValues(new Uint8Array(12));
-        var ct = await crypto.subtle.encrypt(
-            { name: "AES-GCM", iv: nonce }, aesKey,
-            new TextEncoder().encode(plaintext)
-        );
-        var out = new Uint8Array(12 + ct.byteLength);
-        out.set(nonce);
-        out.set(new Uint8Array(ct), 12);
-        var s = "";
-        for (var i = 0; i < out.length; i++) s += String.fromCharCode(out[i]);
-        return btoa(s);
-    },
-
-    decrypt: async function(aesKey, b64) {
-        var raw = Uint8Array.from(atob(b64), function(c) { return c.charCodeAt(0); });
-        if (raw.length < 28) throw new Error("Blob too short");
-        var pt = await crypto.subtle.decrypt(
-            { name: "AES-GCM", iv: raw.slice(0, 12) }, aesKey, raw.slice(12)
-        );
-        return new TextDecoder().decode(pt);
     }
 };
 
@@ -127,7 +87,7 @@ var OKVault = (function() {
         exportJSON: async function() {
             var entries = await this.list();
             return JSON.stringify({
-                version: 1,
+                version: 2,
                 exportedAt: new Date().toISOString(),
                 credentials: entries
             }, null, 2);
@@ -135,7 +95,8 @@ var OKVault = (function() {
 
         importJSON: async function(json, force) {
             var data = JSON.parse(json);
-            if (!data.credentials || !Array.isArray(data.credentials)) {
+            if (!data.credentials || !Array.isArray(data.credentials) ||
+                data.version !== 2) {
                 throw new Error("Invalid vault export format");
             }
             var existing = await this.list();
@@ -144,7 +105,7 @@ var OKVault = (function() {
             var imported = 0, skipped = 0;
             for (var i = 0; i < data.credentials.length; i++) {
                 var entry = data.credentials[i];
-                if (!entry.serviceId || !entry.encrypted) { skipped++; continue; }
+                if (!vaultCrypto.isValidEntry(entry)) { skipped++; continue; }
                 if (existingIds[entry.serviceId] && !force) { skipped++; continue; }
                 await this.put(entry);
                 imported++;
@@ -188,9 +149,10 @@ var OKSessionCache = (function() {
             if (policy === "always") _cache.delete(serviceId);
         },
 
-        get: function(serviceId) {
+        get: function(serviceId, tag) {
             var entry = _cache.get(serviceId);
             if (!entry) return null;
+            if (tag !== undefined && entry.tag !== tag) return null;
             if (entry.ttlMs > 0) {
                 var ref = entry.sliding ? entry.lastUsedAt : entry.createdAt;
                 if (Date.now() - ref > entry.ttlMs) {
@@ -202,13 +164,14 @@ var OKSessionCache = (function() {
             return entry.aesKey;
         },
 
-        put: function(serviceId, aesKey) {
+        put: function(serviceId, aesKey, tag) {
             var policyStr = this.getPolicy(serviceId);
             var parsed = parsePolicy(policyStr);
             if (parsed.noCache) return;
             var now = Date.now();
             _cache.set(serviceId, {
                 aesKey: aesKey,
+                tag: tag,
                 createdAt: now,
                 lastUsedAt: now,
                 policy: policyStr,
@@ -284,6 +247,11 @@ module.exports = {
                 // bound at construction. `onlykey3rd(1, 0)` is a harmless
                 // no-op, kept to match history.js's still-working call.
                 var ok = onlykey3rd(1, 0);
+                // Required here, not at the top: webpack.config.js requires
+                // this module under plain Node to read pagesList, and
+                // age_pqc.js needs the bundler's @noble aliases.
+                var agePqc = require("../../onlykey-fido2/onlykey/age_pqc.js");
+                var vc = vaultCrypto.create(ok, agePqc);
 
                 ok.on("status", function(msg) { log(msg); });
                 ok.on("challenge", function(code) {
@@ -315,57 +283,31 @@ module.exports = {
                     return d.innerHTML;
                 }
 
-                function toBytes(secret) {
-                    if (secret instanceof Uint8Array) return secret;
-                    if (Array.isArray(secret)) return new Uint8Array(secret);
-                    var s = String(secret);
-                    if (/^[0-9a-fA-F]+$/.test(s) && s.length % 2 === 0) {
-                        var out = new Uint8Array(s.length / 2);
-                        for (var i = 0; i < out.length; i++) {
-                            out[i] = parseInt(s.substr(i * 2, 2), 16);
-                        }
-                        return out;
-                    }
-                    return new TextEncoder().encode(s);
+                // The AES key for a stored entry, from the session cache or
+                // the OnlyKey. X-Wing decapsulation happens on the device,
+                // after you confirm there.
+                async function unlock(entry) {
+                    var tag = vaultCrypto.cacheTag(entry);
+                    var cached = OKSessionCache.get(entry.serviceId, tag);
+                    if (cached) return cached;
+                    log("Confirm on your OnlyKey to unlock \"" + entry.serviceId + "\"...");
+                    var aesKey = await vc.keyFor(entry);
+                    OKSessionCache.put(entry.serviceId, aesKey, tag);
+                    renderSessions();
+                    return aesKey;
                 }
 
-                // Derive (or fetch cached) per-service AES key.
-                // OnlyKey ECDH: deterministic per (device, serviceId). Touch required.
-                function deriveAesKey(serviceId) {
-                    var cached = OKSessionCache.get(serviceId);
-                    if (cached) return Promise.resolve(cached);
-
-                    var phrase = "vault:" + serviceId;
-                    log("Confirm on your OnlyKey to unlock \"" + serviceId + "\"...");
-
-                    // KEYTYPE.P256R1 = 1 - the only keytype for which
-                    // derive_public_key()/derive_shared_secret() do a real
-                    // ECDH derivation. press_required=false on the public
-                    // key step (no touch needed just to fetch the pubkey),
-                    // press_required=true on the shared-secret step (the
-                    // actual sensitive ECDH computation) - matches this
-                    // function's own "Touch your OnlyKey to authorize" log
-                    // message above and the device setting bit each maps to
-                    // (derived_key_challenge_mode bit 3 vs. REQ_PRESS/
-                    // ctap_user_presence_test in ok_extension.cpp).
-                    var KEYTYPE_P256R1 = 1;
-                    return new Promise(function(resolve, reject) {
-                        ok.derive_public_key(phrase, KEYTYPE_P256R1, false, function(err, pubkey) {
-                            if (err) return reject(new Error("derive_public_key: " + err));
-                            ok.derive_shared_secret(phrase, pubkey, KEYTYPE_P256R1, true, function(err2, secret) {
-                                if (err2) return reject(new Error("derive_shared_secret: " + err2));
-                                resolve(secret);
-                            });
-                        });
-                    }).then(function(secret) {
-                        var bytes = toBytes(secret);
-                        return OKCrypto.deriveAesKey(bytes).then(function(aesKey) {
-                            bytes.fill(0);
-                            OKSessionCache.put(serviceId, aesKey);
-                            renderSessions();
-                            return aesKey;
-                        });
-                    });
+                // Encrypt and store a secret under a fresh X-Wing
+                // encapsulation to the service's OnlyKey public key. Getting
+                // the public key needs no press.
+                async function store(serviceId, plaintext, policy) {
+                    var key = await vc.newKey(serviceId);
+                    var entry = await vc.sealEntry(serviceId, plaintext, key);
+                    entry.policy = policy;
+                    var saved = await OKVault.put(entry);
+                    OKSessionCache.put(serviceId, key.aesKey, vaultCrypto.cacheTag(entry));
+                    renderSessions();
+                    return saved;
                 }
 
                 async function renderVault() {
@@ -376,10 +318,11 @@ module.exports = {
                         return;
                     }
                     var html = entries.map(function(e) {
-                        var hasSession = !!OKSessionCache.get(e.serviceId);
+                        var hasSession = !!OKSessionCache.get(e.serviceId, vaultCrypto.cacheTag(e));
                         return '<fieldset class="vault-entry" data-service="' + esc(e.serviceId) + '">' +
                             '<input readonly type="text" value="' + esc(e.serviceId) +
                             ' · ' + esc(e.policy || "session:30m") +
+                            (e.v === 2 ? '' : ' · old test format, delete and add again') +
                             (hasSession ? ' · session active' : '') + '" />' +
                             '<button type="button" class="btn-secondary vault-copy-blob">Copy blob</button>' +
                             '<button type="button" class="btn-secondary vault-copy-secret">Copy secret (touch)</button>' +
@@ -414,15 +357,10 @@ module.exports = {
                     }
                     try {
                         OKSessionCache.setPolicy(serviceId, policy);
-                        var aesKey = await deriveAesKey(serviceId);
-                        var encrypted = await OKCrypto.encrypt(aesKey, secret);
-                        await OKVault.put({
-                            serviceId: serviceId,
-                            encrypted: encrypted,
-                            policy: policy
-                        });
+                        log("Getting the vault key for \"" + serviceId + "\" from your OnlyKey...");
+                        var saved = await store(serviceId, secret, policy);
                         $page.find("#vault_secret").val("");
-                        $page.find("#vault_add_result").val(encrypted).removeClass("startHidden");
+                        $page.find("#vault_add_result").val(vaultCrypto.blobOf(saved)).removeClass("startHidden");
                         log('Encrypted and stored "' + serviceId + '" — plaintext cleared');
                         renderVault();
                     } catch (err) {
@@ -437,15 +375,15 @@ module.exports = {
                     if (!entry) return;
 
                     if ($(this).hasClass("vault-copy-blob")) {
-                        await navigator.clipboard.writeText(entry.encrypted);
+                        await navigator.clipboard.writeText(vaultCrypto.blobOf(entry));
                         log('Copied encrypted blob for "' + serviceId + '"');
                     } else if ($(this).hasClass("vault-copy-secret")) {
                         try {
-                            var aesKey = await deriveAesKey(serviceId);
-                            var plaintext = await OKCrypto.decrypt(aesKey, entry.encrypted);
+                            var aesKey = await unlock(entry);
+                            var plaintext = await vc.openEntry(entry, aesKey);
                             await navigator.clipboard.writeText(plaintext);
-                            plaintext = null;
                             log('Secret for "' + serviceId + '" copied to clipboard');
+                            plaintext = null;
                         } catch (err) {
                             log("Decrypt error: " + err.message);
                         }
