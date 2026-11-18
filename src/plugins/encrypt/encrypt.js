@@ -141,6 +141,18 @@ module.exports = {
 
 
                 app.xterm.writeln("PGP Mode to " + page.okpgp._$mode());
+                /* Key slot picker: remembered per browser; Auto = the defaults. */
+                (function() {
+                    var sel = document.getElementById('key_slot');
+                    if (!sel) return;
+                    var key = 'onlykey.keySlot.sign';
+                    try { var saved = window.localStorage.getItem(key); if (saved !== null) sel.value = saved; } catch (e) {}
+                    if (sel.selectedIndex < 0) sel.value = '';
+                    sel.addEventListener('change', function() {
+                        try { window.localStorage.setItem(key, sel.value); } catch (e) {}
+                    });
+                })();
+
 
                 if (page.initParams.recipients) document.getElementById('pgpkeyurl').value = page.initParams.recipients;
 
@@ -432,6 +444,7 @@ module.exports = {
                                         else {
                                             message = page.messagebox.value;
                                         }
+                                        page.okpgp.setKeySlot((document.getElementById('key_slot') || {}).value);
                                         await page.okpgp.startEncryption(page.urlinputbox.value, page.urlinputbox2.value, message, file, async function(err, data) {
                                             if (page.messagebox && data)
                                                 page.messagebox.value = data;

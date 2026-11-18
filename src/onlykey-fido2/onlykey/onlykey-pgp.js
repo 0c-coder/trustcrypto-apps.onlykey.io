@@ -242,9 +242,12 @@ module.exports = function(imports) {
                   // that strips the tag off a real response gets it treated as a
                   // signature or a decryption, which is the hole the tag exists
                   // to close.
-                  var text = bytes2string(Array.from(response).slice(0, 64));
+                  var text = bytes2string(Array.from(response).slice(0, 64)).replace(/\0+$/, '');
                   console.warn('OKPING response did not authenticate:', e.message);
-                  return cb(text.indexOf('Error') === 0 ? text : (e.message || String(e)), null);
+                  // "Timeout occured while waiting for confirmation on OnlyKey" is
+                  // a plain message too; it used to surface as "transit: message
+                  // failed authentication".
+                  return cb(/^(Error|ERROR|Timeout)/.test(text) ? text : (e.message || String(e)), null);
                 }
                 console.log("DECODED RESPONSE:", response);
                 console.log("DECRYPTED RESPONSE:", data);
@@ -647,7 +650,23 @@ module.exports = function(imports) {
         return u2fSignBuffer(OKSIGN, typeof ct === 'string' ? ct.match(/.{2}/g) : ct, cb);
       };
 
+      /*
+       * Which slot holds the private key. 0 = the defaults below (RSA 1 or ECC
+       * 101 to decrypt, RSA 2 or ECC 102 to sign); otherwise the slot the page's
+       * "Key slot" picker named, RSA 1-4 or ECC 101-116.
+       */
+      var key_slot = 0;
+      function valid_key_slot(n) {
+        return (n >= 1 && n <= 4) || (n >= 101 && n <= 116);
+      }
+      _api.setKeySlot = function(value) {
+        var n = parseInt(value, 10);
+        key_slot = valid_key_slot(n) ? n : 0;
+        return key_slot;
+      };
+
       function slotid(slot) {
+        if (key_slot) return key_slot;
         var ret = (slot == OKSIGN ? 2 : 1);
         
         if(KB_ONLYKEY.is_ecc){

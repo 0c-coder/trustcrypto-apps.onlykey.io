@@ -15,6 +15,8 @@
     <form id="action">
         <input type="radio" name="select_one" id="encrypt_and_sign" value="Encrypt and Sign" checked="checked"> Encrypt and Sign
         <input type="radio" name="select_one" id="encrypt_only" value="Encrypt Only"> Encrypt Only
-        <input type="radio" name="select_one" id="sign_only" value="Sign Only"> Sign Only </form>
+        <input type="radio" name="select_one" id="sign_only" value="Sign Only"> Sign Only
+        <label class="key-slot-pick" title="Which OnlyKey slot holds your signing key. Auto uses RSA slot 2, or ECC slot 2 for an ECC key.">&nbsp; Key slot
+            <select id="key_slot"><option value="">Auto (RSA 2 / ECC 2)</option><option value="1">RSA 1</option><option value="2">RSA 2</option><option value="3">RSA 3</option><option value="4">RSA 4</option><option value="101">ECC 1</option><option value="102">ECC 2</option><option value="103">ECC 3</option><option value="104">ECC 4</option><option value="105">ECC 5</option><option value="106">ECC 6</option><option value="107">ECC 7</option><option value="108">ECC 8</option><option value="109">ECC 9</option><option value="110">ECC 10</option><option value="111">ECC 11</option><option value="112">ECC 12</option><option value="113">ECC 13</option><option value="114">ECC 14</option><option value="115">ECC 15</option><option value="116">ECC 16</option></select></label> </form>
 </center>
 
