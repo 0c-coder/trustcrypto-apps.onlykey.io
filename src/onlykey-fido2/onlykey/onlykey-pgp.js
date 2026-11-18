@@ -369,6 +369,175 @@ module.exports = function(imports) {
         }
       }
 
+      /** Left-pad an RSA ciphertext to the modulus length. */
+      function rsa_block(c, len) {
+        c = Array.from(c);
+        while (c.length < len) c.unshift(0);
+        return c;
+      }
+
+      /*
+       * Messages kbpgp cannot read go through openpgp.js (the vendored v6 fork the
+       * PGP-PQC pages already use), with the private-key half on the device through
+       * that fork's hardware hooks. kbpgp still handles everything it handled
+       * before; this only takes the messages it failed on:
+       *
+       *  - GnuPG 2.4+ encrypts to keys that advertise AEAD with the OCB packet
+       *    (tag 20), and RFC 9580 tools use SEIPD v2. kbpgp knows neither and
+       *    said "Could not find encrypted data packet" without asking the device.
+       *  - NIST-curve ECDH (P-256 and the like). kbpgp's device hook sent bytes
+       *    13..45 of the session-key packet - the Curve25519 layout - which for
+       *    P-256 is half the ephemeral point. Firmware 3.1.0 refuses that ("Error
+       *    invalid ECC public key size"); older firmware computed a wrong secret.
+       *  - RFC 9580 X25519/X448 session keys, which kbpgp predates.
+       */
+      var openpgp_lib = null;
+      function load_openpgp() {
+        if (!openpgp_lib) openpgp_lib = require('./openpgp_loader.js');
+        return openpgp_lib;
+      }
+
+      /** Why kbpgp cannot read `message`, or null if it can. */
+      function kbpgp_cannot_read(openpgp, message) {
+        var T = openpgp.enums.packet, A = openpgp.enums.publicKey;
+        for (var i = 0; i < message.packets.length; i++) {
+          var p = message.packets[i], tag = p.constructor.tag;
+          if (tag === T.aeadEncryptedData) return 'OCB (AEAD) encrypted data';
+          if (tag === T.symEncryptedIntegrityProtectedData && p.version === 2) return 'SEIPD v2 encrypted data';
+          if (tag === T.publicKeyEncryptedSessionKey) {
+            if (p.version === 6) return 'v6 session key';
+            if (p.publicKeyAlgorithm === A.x25519 || p.publicKeyAlgorithm === A.x448) return 'X25519/X448 session key';
+            var V = p.encrypted && p.encrypted.V;
+            if (p.publicKeyAlgorithm === A.ecdh && V && V[0] === 0x04) return 'NIST-curve ECDH session key';
+          }
+        }
+        return null;
+      }
+
+      /*
+       * One private-key operation on the device: the same send, confirmation and
+       * poll as the kbpgp hook (u2fSignBuffer to RSA slot 1 or ECC slot 101), with
+       * the challenge digits computed over exactly the bytes sent.
+       */
+      function device_decrypt(bytes, is_ecc) {
+        return new Promise(function(resolve, reject) {
+          var arr = Array.from(bytes);
+          KB_ONLYKEY.is_ecc = is_ecc;
+          _poll_type = 3;
+          _poll_delay = arr.length >= 512 ? 7 : (arr.length >= 384 ? 5 : 1);
+          var pin_hash = sha256(arr);
+          pin = [get_pin(pin_hash[0]), get_pin(pin_hash[15]), get_pin(pin_hash[31])];
+          // u2fSignBuffer and doPinTimer report failures on the "error" event and
+          // never call back; end this operation with them.
+          function on_error(e) {
+            var err = e instanceof Error ? e : new Error(String(e));
+            err.onlykey_reported = true;
+            reject(err);
+          }
+          _api.once("error", on_error);
+          u2fSignBuffer(OKDECRYPT, arr, function(result) {
+            _api.removeListener("error", on_error);
+            if (!result || typeof result === 'string') return reject(new Error(result || "No response from OnlyKey"));
+            resolve(Uint8Array.from(result));
+          });
+        });
+      }
+
+      function set_device_hooks(openpgp) {
+        var A = openpgp.enums.publicKey;
+        openpgp.setHardwareHooks({
+          signer: null,
+          mlkemDecaps: null,
+          // RSA. The device strips the PKCS#1 v1.5 padding and returns what
+          // openpgp.js's own RSA decrypt returns: algorithm byte, key, checksum.
+          decryptor: async function(keyAlgo, params, publicParams) {
+            if (keyAlgo !== A.rsaEncryptSign && keyAlgo !== A.rsaEncrypt) return null;
+            return device_decrypt(rsa_block(params.c, publicParams.n.length), false);
+          },
+          // ECDH. The device takes the peer point (X25519: 32 bytes; NIST:
+          // 0x04 || X || Y) and returns the X25519 secret, or X || Y for NIST
+          // curves, of which OpenPGP's KDF uses X.
+          ecdh: async function(algo, V) {
+            var nist = V.length > 33 && V[0] === 0x04;
+            var share = nist ? V : (V.length === 33 && V[0] === 0x40 ? V.subarray(1) : V);
+            if (!nist && share.length !== 32) throw new Error("This OnlyKey cannot use a " + V.length + "-byte ECDH key share");
+            var out = await device_decrypt(share, true);
+            if (!nist) return out;
+            var coord = (V.length - 1) / 2;
+            if (out.length < coord) throw new Error("OnlyKey returned a short ECDH result");
+            return out.subarray(0, coord);
+          }
+        });
+      }
+
+      /** What the pages read back: kbpgp's literal array, near enough. */
+      function as_literals(data) {
+        var buf = typeof data === 'string' ? kbpgp.Buffer.from(data, 'utf8') : kbpgp.Buffer.from(data);
+        return [{
+          toString: function() { return buf.toString('utf8'); },
+          toBuffer: function() { return buf; }
+        }];
+      }
+
+      /*
+       * Decrypt `source` ({armored} or {binary}) through openpgp.js if kbpgp cannot.
+       * Returns false, having done nothing, when kbpgp should handle it; otherwise
+       * runs the whole operation and calls done(err, literals, signerText).
+       */
+      async function openpgp_route(source, signerKey, onlykeyKey, done) {
+        var openpgp, message, reason;
+        try {
+          openpgp = load_openpgp();
+          message = source.binary ?
+            await openpgp.readMessage({ binaryMessage: Uint8Array.from(source.binary) }) :
+            await openpgp.readMessage({ armoredMessage: source.armored });
+          reason = kbpgp_cannot_read(openpgp, message);
+        } catch (e) {
+          console.info("openpgp.js could not parse the message, leaving it to kbpgp:", e && e.message);
+          return false; // not something openpgp.js parses either: kbpgp reports it as before
+        }
+        if (!reason) return false;
+        console.info("Decrypting with openpgp.js: " + reason);
+
+        var verify = _$mode_is('Decrypt and Verify');
+        try {
+          var pub = await openpgp.readKey({ armoredKey: onlykeyKey });
+          var opts = {
+            message: message,
+            decryptionKeys: openpgp.createHardwarePrivateKey(pub),
+            format: source.binary ? 'binary' : 'utf8'
+          };
+          var signer = null;
+          if (verify) {
+            signer = await openpgp.readKey({ armoredKey: signerKey });
+            opts.verificationKeys = signer;
+          }
+          set_device_hooks(openpgp);
+          var result;
+          try {
+            result = await openpgp.decrypt(opts);
+          } finally {
+            openpgp.clearHardwareHooks();
+          }
+          var signedBy = null;
+          if (verify) {
+            if (!result.signatures || !result.signatures.length) {
+              var unsigned = new Error((source.binary ? "The file" : "The message") +
+                " is not signed, so it cannot be verified. Use Decrypt Only to read it anyway.");
+              _api.emit("error", unsigned);
+              return done(unsigned), true;
+            }
+            await result.signatures[0].verified; // rejects for a bad or unknown signature
+            signedBy = keyIdentity.describeOpenpgp(signer);
+          }
+          done(null, as_literals(result.data), signedBy);
+        } catch (e) {
+          if (!e.onlykey_reported) _api.emit("error", (e && e.message) || String(e));
+          done(e);
+        }
+        return true;
+      }
+
       KB_ONLYKEY.auth_decrypt = async function(ct_array, cb) { //OnlyKey decrypt request to keyHandle
         if ( /*ct_array.length > 1 &&*/ onlykeyApi.request_pgp_pubkey) {
           var key = await onlykeyApi.request_pgp_pubkey();
@@ -429,6 +598,11 @@ module.exports = function(imports) {
             _poll_delay = 7; //7 Second delay for RSA 4096
           }
           var padded_ct = ct.slice(12, ct.length);
+          // An MPI drops its leading zero bytes, so about 1 RSA ciphertext in 256
+          // is a byte short of the modulus and the device refused it ("Error with
+          // RSA data to decrypt invalid size"). Moduli are whole multiples of 128
+          // bytes (2048/3072/4096 bits), so restore the length to the next one.
+          if (!KB_ONLYKEY.is_ecc) padded_ct = rsa_block(padded_ct, Math.ceil(padded_ct.length / 128) * 128);
           
           if(KB_ONLYKEY.is_ecc){
             var s = 13;
@@ -632,7 +806,7 @@ module.exports = function(imports) {
         _api.emit("working");
 
         if (signer == "" && _$mode_is('Decrypt and Verify')) {
-          _api.emit("error", "I need senders's public pgp key to verify :(");
+          _api.emit("error", "I need the sender's public PGP key to verify :(");
           return;
         }
         else if (signer != "" && _$mode_is('Decrypt and Verify')) {
@@ -645,7 +819,7 @@ module.exports = function(imports) {
         }
 
         if (my_public == "") {
-          _api.emit("error", "I need your's public pgp key to proceed :(");
+          _api.emit("error", "I need your public PGP key to proceed :(");
           return;
         }
         else {
@@ -664,6 +838,22 @@ module.exports = function(imports) {
 
       function decryptText(key, onlykeyKey, encryptedMessage, callback) {
         return new Promise(async(resolve) => {
+
+          var routed = await openpgp_route({ armored: encryptedMessage }, key, onlykeyKey, function(err, literals, signedBy) {
+            if (err) {
+              callback(err);
+              return resolve();
+            }
+            _api.emit("status", signedBy ?
+              "Done :) Signed by " + signedBy + ", Click here to copy message" :
+              "Done :) Click here to copy message");
+            _api.emit("done");
+            callback(null, literals);
+            _$status('finished');
+            imports.app.emit("ok-connected");
+            resolve(literals);
+          });
+          if (routed) return;
 
           var keyStore = pgpkeyStore();
           switch (_$mode()) {
@@ -774,6 +964,24 @@ module.exports = function(imports) {
           }
 
           var buffer = kbpgp.Buffer.from(parsedfile);
+
+          var routed = await openpgp_route({ binary: buffer }, key, onlykeyKey, function(err, literals, signedBy) {
+            if (err) {
+              callback(err);
+              return resolve();
+            }
+            _api.emit("status", signedBy ?
+              'Done :) Signed by ' + signedBy + ', downloading decrypted file ' + filename :
+              'Done :)  downloading decrypted file ' + filename);
+            saveAs(new Blob([literals[0].toBuffer()], { type: "text/plain;charset=utf-8" }), filename);
+            _api.emit("done");
+            callback();
+            _$status('finished');
+            imports.app.emit("ok-connected");
+            resolve();
+          });
+          if (routed) return;
+
           var keyStore = pgpkeyStore();
           switch (_$mode()) {
             case 'Decrypt and Verify':
